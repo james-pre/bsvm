@@ -1,0 +1,35 @@
+{
+	"name": "bsvm",
+	"version": "0.0.1",
+	"description": "Blankstorm Version Manager",
+	"main": "src/index.js",
+	"type": "module",
+	"scripts": {
+		"format:check": "prettier --check src/**/*.js",
+		"format:fix": "prettier --fix src/**/*.js",
+		"lint": "eslint src/**/*.js",
+		"build": "pkg --out-path=dist",
+		"test": "npm run format:check && npm run lint && npm run build"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/dr-vortex/bsvm.git"
+	},
+	"engines": {
+		"node": ">=18.0.0"
+	},
+	"author": "Dr. Vortex",
+	"license": "see license.md",
+	"bugs": {
+		"url": "https://github.com/dr-vortex/bsvm/issues"
+	},
+	"homepage": "https://github.com/dr-vortex/bsvm#readme",
+	"devDependencies": {
+		"@babel/eslint-parser": "^7.19.1",
+		"@babel/plugin-syntax-import-assertions": "^7.20.0",
+		"eslint": "^8.33.0",
+		"eslint-plugin-node": "^11.1.0",
+		"pkg": "^5.8.0",
+		"prettier": "^2.8.3"
+	}
+}
