@@ -4,13 +4,6 @@
 		"browser": true
 	},
 	"extends": ["eslint:recommended", "plugin:node/recommended"],
-	"parser": "@babel/eslint-parser",
-	"parserOptions": {
-		"requireConfigFile": false,
-		"babelOptions": {
-			"plugins": ["@babel/plugin-syntax-import-assertions"]
-		}
-	},
 	"rules": {
 		"no-useless-escape": "warn",
 		"no-unused-vars": "warn",
