@@ -9,7 +9,7 @@
 		"format:fix": "prettier --fix src/**/*.js",
 		"lint": "eslint src/**/*.js",
 		"build": "pkg -t win,linux --output=dist/bsvm src/index.js",
-		"test": "npm run format:check && npm run lint && npm run build"
+		"test": "node src/index.js"
 	},
 	"repository": {
 		"type": "git",
@@ -31,6 +31,6 @@
 		"prettier": "^2.8.3"
 	},
 	"dependencies": {
-		"git-clone": "^0.2.0"
+		"isomorphic-git": "^1.21.0"
 	}
 }

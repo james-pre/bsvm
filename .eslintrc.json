@@ -3,6 +3,10 @@
 		"es2022": true,
 		"browser": true
 	},
+	"parserOptions": {
+		"ecmaVersion": "latest",
+		"sourceType": "module"
+	},
 	"extends": ["eslint:recommended", "plugin:node/recommended"],
 	"rules": {
 		"no-useless-escape": "warn",

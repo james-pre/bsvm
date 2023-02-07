@@ -3,13 +3,17 @@ import { homedir } from 'os';
 import path from 'path';
 import { parseArgs } from 'util';
 const bsvm = { version: '0.0.1' }; //import bsvm from '../package.json' assert { type: 'json' };
-import gitClone from 'git-clone/promise';
 
-const local_install_path = path.join(homedir(), '.bsvk/'),
+const remote_repo = 'dr-vortex/blankstorm',
+	local_install_path = path.join(homedir(), '.bsvk/'),
 	local_config_path = path.join(local_install_path, 'config.json'),
 	global_config_path = local_config_path;
 
-let config = {};
+//load config
+let config = {
+	install_dir: path.join(local_install_path, 'installed'),
+	git_dir: path.join(local_install_path, 'repo'),
+};
 if (fs.existsSync(local_config_path)) {
 	const content = fs.readFileSync(local_config_path, { encoding: 'utf-8' });
 	Object.assign(config, JSON.parse(content));
@@ -32,6 +36,7 @@ const _args = parseArgs({
 		force: { short: 'f', type: 'boolean' },
 		'dry-run': { short: 'd', type: 'boolean' },
 		installDir: { short: 'i', type: 'string' },
+		mode: { short: 'm', type: 'string' },
 		global: { short: 'g', type: 'boolean' },
 		all: { short: 'a', type: 'boolean' },
 	},
@@ -51,15 +56,31 @@ const args = _args.positionals,
 		force: false,
 		'dry-run': false,
 		installDir: config.install_dir,
+		mode: 'deploy',
 		global: false,
 		all: false,
 		..._args.values,
 	};
 
+import * as git from 'isomorphic-git';
+import * as http from 'http';
+const git_options = {
+	fs,
+	http,
+	dir: config.git_dir,
+	dryRun: options['dry-run'],
+};
+
 const verboseLog = (...data) => {
 	if (options.verbose) {
 		console.log(...data);
 	}
+};
+
+const getVersions = async () => {
+	verboseLog('Fetching releases...');
+	const res = await fetch(`https://api.github.com/repos/${remote_repo}/releases`);
+	return await res.json();
 };
 
 if (options.version) {
@@ -72,7 +93,10 @@ if (options.help) {
 	bsvm (--help | -h): Print this help message
 	bsvm --version: Print the current version of BSVM
 	bsvm --install: Install BSVM
-	bsvm --update: Update BSVM
+	bsvm --update: Update BSVM (Not implemented yet)
+
+	bsvm install [<version> ...]: installs the specified versions
+	bsvm uninstall [<version> ...]: uninstalls the specified versions
 	`);
 	process.exit();
 }
@@ -89,10 +113,9 @@ if (options.install) {
 	verboseLog('Writing empty config file...');
 	fs.writeFileSync(local_config_path, '{}');
 	verboseLog('Cloning git repository...');
-	gitClone('https://github.com/dr-vortex/blankstorm.git', path.join(local_install_path, 'repo')).then(() => {
-		console.log('Installation successful!');
-		process.exit();
-	});
+	await git.clone({ ...git_options, url: `https://github.com/${remote_repo}.git` });
+	console.log('Installation successful!');
+	process.exit();
 }
 
 if (options.update) {
@@ -101,12 +124,52 @@ if (options.update) {
 
 switch (args[0]) {
 	case 'install':
-		args.shift();
+		for (let version of args.slice(1)) {
+			try {
+				const versions = await getVersions();
+				const versionData = versions.find(_version => _version.tag_name == version || _version.name == version);
+				if (!versionData) {
+					throw 'Version does not exist.';
+				}
+
+				verboseLog('Checking out tag...');
+				await git.checkout({ ...git_options, ref: versionData.tag_name });
+
+				verboseLog('Checking for install command...');
+			} catch (err) {
+				console.log(`Failed to install version "${version}": ${err}`);
+			}
+		}
+		console.log('Done!');
 		break;
 	case 'uninstall':
-		args.shift();
+		for (let version of args.slice(1)) {
+			try {
+				const versionPath = path.join(config.install_dir, version);
+				if (!fs.existsSync(versionPath)) {
+					throw 'Version is not installed.';
+				}
+
+				console.log(`Uninstalling ${version}...`);
+				fs.rmdirSync(versionPath, { recursive: true, force: true });
+			} catch (err) {
+				console.log(`Failed to uninstall version "${version}": ${err}`);
+			}
+		}
+		console.log('Done!');
 		break;
 	case 'list':
+		const versions = await git.listTags(git_options);
+		for (let version of versions) {
+			const isInstalled = fs.existsSync(path.join(config.install_dir, version)),
+				oid = await git.resolveRef({ ...git_options, ref: version }),
+				tag = (await git.readTag({ ...git_options, oid })).tag;
+			if (options.all) {
+				console.log(`${tag.message} <${tag.tag}> ${isInstalled ? '(installed)' : ''}`);
+			} else if (isInstalled) {
+				console.log(`${tag.message} <${tag.tag}>`);
+			}
+		}
 		break;
 	case 'config':
 		const configPath = options.global ? global_config_path : local_config_path;
@@ -114,8 +177,8 @@ switch (args[0]) {
 			console.log('Warning: global config is not supported yet.');
 		}
 		let _config = {};
-		if (!fs.existsSync(configPath) && options.verbose) {
-			console.log(`No config file found at ${configPath}, creating.`);
+		if (!fs.existsSync(configPath)) {
+			verboseLog(`No config file found at ${configPath}, creating.`);
 		} else {
 			const content = fs.readFileSync(configPath, { encoding: 'utf-8' });
 			Object.assign(_config, JSON.parse(content));
