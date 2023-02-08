@@ -5,7 +5,7 @@ import { parseArgs } from 'util';
 const bsvm = { version: '0.0.1' }; //import bsvm from '../package.json' assert { type: 'json' };
 
 const remote_repo = 'dr-vortex/blankstorm',
-	local_install_path = path.join(homedir(), '.bsvk/'),
+	local_install_path = path.join(homedir(), '.bsvm/'),
 	local_config_path = path.join(local_install_path, 'config.json'),
 	global_config_path = local_config_path;
 
