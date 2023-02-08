@@ -167,15 +167,14 @@ switch (args[0]) {
 		console.log('Done!');
 		break;
 	case 'list':
-		const versions = await git.listTags(git_options);
+		const versions = await getVersions();
 		for (let version of versions) {
-			const isInstalled = fs.existsSync(path.join(config.install_dir, version)),
-				oid = await git.resolveRef({ ...git_options, ref: version }),
-				tag = (await git.readTag({ ...git_options, oid })).tag;
+			const isInstalled = fs.existsSync(path.join(config.install_dir, version.tag_name));
+
 			if (options.all) {
-				console.log(`${tag.message} <${tag.tag}> ${isInstalled ? '(installed)' : ''}`);
+				console.log(`${version.name} <${version.tag_name}> ${isInstalled ? '(installed)' : ''}`);
 			} else if (isInstalled) {
-				console.log(`${tag.message} <${tag.tag}>`);
+				console.log(`${version.name} <${version.tag_name}>`);
 			}
 		}
 		break;
