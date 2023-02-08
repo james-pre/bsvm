@@ -69,6 +69,8 @@ const git_options = {
 	http,
 	dir: config.git_dir,
 	dryRun: options['dry-run'],
+	url: `https://github.com/${remote_repo}.git`,
+	onMessage: msg => updateLastLine(msg, true),
 };
 
 const verboseLog = (...data) => {
@@ -85,6 +87,11 @@ const updateLastLine = (msg, verbose) => {
 	}
 };
 
+const updateRepo = async () => {
+	verboseLog('Updating local repository...');
+	await git.pull(git_options);
+};
+
 const getVersions = async () => {
 	verboseLog('Fetching releases...');
 	const res = await fetch(`https://api.github.com/repos/${remote_repo}/releases`);
@@ -96,15 +103,20 @@ if (options.version) {
 	process.exit();
 }
 
-if (options.help) {
+if (options.help || args[0] == 'help') {
 	console.log(`BSVM usage:
 	bsvm (--help | -h): Print this help message
 	bsvm --version: Print the current version of BSVM
 	bsvm --install: Install BSVM
 	bsvm --update: Update BSVM (Not implemented yet)
 
-	bsvm install [<version> ...]: installs the specified versions
-	bsvm uninstall [<version> ...]: uninstalls the specified versions
+	bsvm list: List installed versions of Blankstorm
+		bsvm list (--all | -a): List all Blankstorm versions and whether they are downloaded or installed
+	bsvm install [<version> ...]: Installs the specified version[s]
+	bsvm uninstall [<version> ...]: Uninstalls the specified version[s]
+	bsvm update: Updates the local repository (downloads all Blankstorm versions)
+	bsvm config <key> <value>: Sets the config <key> to <value>
+		--global | -g: Applys the config change globally (not supported yet)
 	`);
 	process.exit();
 }
@@ -121,7 +133,7 @@ if (options.install) {
 	verboseLog('Writing empty config file...');
 	fs.writeFileSync(local_config_path, '{}');
 	verboseLog('Cloning git repository...');
-	await git.clone({ ...git_options, url: `https://github.com/${remote_repo}.git`, onMessage: msg => updateLastLine(msg, true) });
+	await git.clone(git_options);
 	console.log('Installation successful!');
 	process.exit();
 }
@@ -132,6 +144,7 @@ if (options.update) {
 
 switch (args[0]) {
 	case 'install':
+		await updateRepo();
 		for (let version of args.slice(1)) {
 			try {
 				const versions = await getVersions();
@@ -166,13 +179,43 @@ switch (args[0]) {
 		}
 		console.log('Done!');
 		break;
+	case 'update':
+		console.log('Updating...');
+		await updateRepo();
+		console.log('Done!');
+		break;
 	case 'list':
-		const versions = await getVersions();
+
+		//fetch releases from GitHub
+		let versions = [];
+		try{
+			versions = await getVersions();
+		}catch(err){
+			console.log('Failed to fetch releases. Attempting to use local repository.');
+		}
+
+		let tags = [];
+		try{
+			tags = await git.listTags(git_options);
+
+			versions = versions.length ? versions : await Promise.all(tags.map(async tag_name => {
+				const oid = await git.resolveRef({ ...git_options, ref: tag_name });
+				const object = await git.readObject({ ...git_options, oid, format: 'parsed' });
+
+				return {
+					tag_name,
+					name: object.type == 'tag' ? object.object.message: 'Unknown',
+				}
+			}));
+		}catch(err){
+			console.log('Failed to get local tags.');
+		}
+		versions.reverse();
 		for (let version of versions) {
 			const isInstalled = fs.existsSync(path.join(config.install_dir, version.tag_name));
 
 			if (options.all) {
-				console.log(`${version.name} <${version.tag_name}> ${isInstalled ? '(installed)' : ''}`);
+				console.log(`${version.name} <${version.tag_name}> ${isInstalled ? '(installed)' : tags.includes(version.tag_name) ? '(downloaded)' : ''}`);
 			} else if (isInstalled) {
 				console.log(`${version.name} <${version.tag_name}>`);
 			}
