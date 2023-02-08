@@ -63,7 +63,7 @@ const args = _args.positionals,
 	};
 
 import * as git from 'isomorphic-git';
-import * as http from 'http';
+import * as http from 'isomorphic-git/http/node/index.js';
 const git_options = {
 	fs,
 	http,
@@ -74,6 +74,14 @@ const git_options = {
 const verboseLog = (...data) => {
 	if (options.verbose) {
 		console.log(...data);
+	}
+};
+
+const updateLastLine = (msg, verbose) => {
+	if(!verbose || options.verbose){
+		process.stdout.clearLine(0);
+		process.stdout.cursorTo(0);
+		process.stdout.write(msg);
 	}
 };
 
@@ -113,7 +121,7 @@ if (options.install) {
 	verboseLog('Writing empty config file...');
 	fs.writeFileSync(local_config_path, '{}');
 	verboseLog('Cloning git repository...');
-	await git.clone({ ...git_options, url: `https://github.com/${remote_repo}.git` });
+	await git.clone({ ...git_options, url: `https://github.com/${remote_repo}.git`, onMessage: msg => updateLastLine(msg, true) });
 	console.log('Installation successful!');
 	process.exit();
 }
