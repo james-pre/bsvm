@@ -13,7 +13,7 @@ const remote_repo = 'dr-vortex/blankstorm',
 
 //load config
 let config = {
-	install_dir: path.join(local_install_path, 'installed'),
+	install_dir: path.join(local_install_path, 'versions'),
 	git_dir: path.join(local_install_path, 'repo'),
 };
 if (fs.existsSync(local_config_path)) {
@@ -25,6 +25,7 @@ if (fs.existsSync(global_config_path)) {
 	Object.assign(config, JSON.parse(content));
 }
 
+//parse CLI arguements
 const _args = parseArgs({
 	options: {
 		//BVM management
@@ -45,25 +46,26 @@ const _args = parseArgs({
 	allowPositionals: true,
 });
 
-const args = _args.positionals,
-	options = {
-		//BVM management
-		help: false,
-		version: false,
-		update: false,
-		install: false,
+const args = _args.positionals;
+const options = {
+	//BVM management
+	help: false,
+	version: false,
+	update: false,
+	install: false,
+	
+	//Command options
+	verbose: false,
+	force: false,
+	'dry-run': false,
+	'no-copy': false,
+	mode: 'deploy',
+	global: false,
+	all: false,
+	..._args.values,
+};
 
-		//Command options
-		verbose: false,
-		force: false,
-		'dry-run': false,
-		'no-copy': false,
-		mode: 'deploy',
-		global: false,
-		all: false,
-		..._args.values,
-	};
-
+//load git
 import * as git from 'isomorphic-git';
 import * as http from 'isomorphic-git/http/node/index.js';
 const git_options = {
@@ -79,6 +81,10 @@ const git_options = {
 	},
 };
 
+//globals
+let tags = [], versions = [];
+
+//utilities
 const verboseLog = (...data) => {
 	if (options.verbose) {
 		console.log(...data);
@@ -96,12 +102,31 @@ const updateLastLine = (msg, verbose) => {
 const updateRepo = async (ref = 'main') => {
 	verboseLog('Updating local repository...');
 	await git.pull({ ...git_options, ref });
+	tags = await git.listTags(git_options);
 };
 
-const getVersions = async () => {
-	verboseLog('Fetching releases...');
-	const res = await fetch(`https://api.github.com/repos/${remote_repo}/releases`);
-	return await res.json();
+const updateVersions = async () => {
+	versions = await getVersions();
+}
+
+const getVersions = async (useLocal) => {
+
+	if(useLocal){
+		return await Promise.all(tags.map(convertTagToVersion));
+	}else{
+		try{
+		verboseLog('Fetching releases...');
+		const res = await fetch(`https://api.github.com/repos/${remote_repo}/releases`);
+		return await res.json();
+		}catch(err){
+			console.log('Failed to fetch releases. Attempting to use local repository.');
+			try{
+				return await Promise.all(tags.map(convertTagToVersion));
+			}catch(err){
+				console.log('Failed to get local tags.');
+			}
+		}
+	}
 };
 
 const convertTagToVersion = async tag_name => {
@@ -113,6 +138,16 @@ const convertTagToVersion = async tag_name => {
 		name: object.type == 'tag' ? object.object.message : 'Unknown',
 	};
 };
+
+const resolveVersions = (_versions) => _versions.flatMap(_version => versions.filter(version => version.tag_name.includes(_version) || version.name.includes(_version)));
+
+const installDir = (from, to) => {
+	fs.cpSync(from, to, { recursive: true, force: true });
+	verboseLog('Cleaning up...');
+	for(let name in [ '.git', 'node_modules', 'package.json', 'package-lock.json']){
+		fs.rmSync(path.join(to, name), { recursive: true, force: true });
+	}
+}
 
 if (options.version) {
 	console.log(`BSVM v${bsvm.version}`);
@@ -155,8 +190,8 @@ if (options.install) {
 	}
 
 	verboseLog('Creating directories...');
-	fs.mkdirSync(path.join(local_install_path, 'repo'), { recursive: true });
-	fs.mkdirSync(path.join(local_install_path, 'versions'), { recursive: true });
+	fs.mkdirSync(config.git_dir, { recursive: true });
+	fs.mkdirSync(config.install_dir, { recursive: true });
 	verboseLog('Writing empty config file...');
 	fs.writeFileSync(local_config_path, '{}');
 	verboseLog('Cloning git repository...');
@@ -171,21 +206,18 @@ if (options.update) {
 
 switch (args[0]) {
 	case 'install':
-		await updateRepo(args[1]);
-		const _tags = await git.listTags(git_options);
-		let versionsToInstall = options.all ? _tags : args.slice(1);
-		const _versions = await Promise.all(_tags.map(convertTagToVersion))
+		await updateRepo();
+		await updateVersions();
+		const versionsToInstall = options.all ? versions : resolveVersions(args.slice(1));
 		for (let version of versionsToInstall) {
 			try {
-				const
-					versionData = _versions.find(_version => _version.tag_name == version || _version.name == version),
-					installPath = path.join(config.install_dir, versionData.tag_name);
-				if (!versionData) {
+				const installPath = path.join(config.install_dir, version.tag_name);
+				if (!version) {
 					throw 'Version does not exist.';
 				}
 
-				verboseLog(`Checking out ${version}...`);
-				await git.checkout({ ...git_options, ref: versionData.tag_name });
+				verboseLog(`Checking out ${version.tag_name}...`);
+				await git.checkout({ ...git_options, ref: version.tag_name });
 
 				if (!fs.existsSync(path.join(config.git_dir, 'package.json'))) {
 					//old version that does not use NPM
@@ -194,7 +226,7 @@ switch (args[0]) {
 						throw `Version has no "${options.mode}" command and --no-copy prevents copying.`;
 					}
 
-					fs.cpSync(config.git_dir, installPath, { recursive: true, force: options.force });
+					installDir(config.git_dir, installPath);
 				} else {
 					verboseLog('Checking for NPM...');
 					const { stderr: checkError } = await exec(`${process.platform == 'win32' ? 'where' : 'which'} npm`);
@@ -222,7 +254,7 @@ switch (args[0]) {
 						if(options['no-copy']){
 							throw `Version has no "${options.mode}" command and --no-copy prevents copying.`;
 						}
-						fs.cpSync(config.git_dir, installPath, { recursive: true, force: options.force });
+						installDir(config.git_dir, installPath);
 					} else {
 						console.log('Deploying...');
 						const { stdout: deployOut, stderr: deployError } = await exec(
@@ -243,15 +275,18 @@ switch (args[0]) {
 		console.log('Done!');
 		break;
 	case 'uninstall':
-		for (let version of args.slice(1)) {
+		await updateRepo();
+		await updateVersions();
+		const versionsToUninstall = options.all ? versions : resolveVersions(args.slice(1));
+		for (let version of versionsToUninstall) {
 			try {
-				const versionPath = path.join(config.install_dir, version);
+				const versionPath = path.join(config.install_dir, version.tag_name);
 				if (!fs.existsSync(versionPath)) {
 					throw 'Version is not installed.';
 				}
 
-				console.log(`Uninstalling ${version}...`);
-				fs.rmdirSync(versionPath, { recursive: true, force: true });
+				console.log(`Uninstalling ${version.tag_name}...`);
+				fs.rmSync(versionPath, { recursive: true, force: true });
 			} catch (err) {
 				console.log(`Failed to uninstall version "${version}": ${err}`);
 			}
@@ -261,27 +296,19 @@ switch (args[0]) {
 	case 'update':
 		console.log('Updating...');
 		await updateRepo();
+		await updateVersions();
 		console.log('Done!');
 		break;
 	case 'list':
 		//fetch releases from GitHub
-		let versions = [];
+		let _versions = [];
 		try {
-			versions = await getVersions();
+			_versions = await getVersions();
 		} catch (err) {
 			console.log('Failed to fetch releases. Attempting to use local repository.');
 		}
-
-		let tags = [];
-		try {
-			tags = await git.listTags(git_options);
-
-			versions = versions.length ? versions : await Promise.all(tags.map(convertTagToVersion));
-		} catch (err) {
-			console.log('Failed to get local tags.');
-		}
-		versions.reverse();
-		for (let version of versions) {
+		_versions.reverse();
+		for (let version of _versions) {
 			const isInstalled = fs.existsSync(path.join(config.install_dir, version.tag_name));
 
 			if (options.all) {
