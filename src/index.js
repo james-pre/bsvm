@@ -218,7 +218,7 @@ switch (args[0]) {
 					}
 
 					if (!packageData.scripts[options.mode]) {
-						console.log(`Could not find "${options.mode}" command ${options['no-copy'] ? ', copying instead...' : ' (not attempting to copy)'}`);
+						console.log(`Could not find "${options.mode}" command ${options['no-copy'] ? ' (not attempting to copy)': ', copying instead...' }`);
 						if(options['no-copy']){
 							throw `Version has no "${options.mode}" command and --no-copy prevents copying.`;
 						}
