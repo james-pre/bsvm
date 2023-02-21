@@ -1,7 +1,8 @@
 import * as fs from 'fs';
 import { homedir } from 'os';
 import path from 'path';
-import { parseArgs, promisify } from 'util';
+import { promisify } from 'util';
+import { tagToVersion, releaseToVersion, copyGitDir, updateLastLine } from './util.js';
 import { exec as _exec } from 'child_process';
 const exec = promisify(_exec);
 const bsvm = { version: '0.0.1' }; //import bsvm from '../package.json' assert { type: 'json' };
@@ -25,46 +26,6 @@ if (fs.existsSync(global_config_path)) {
 	Object.assign(config, JSON.parse(content));
 }
 
-//parse CLI arguements
-const _args = parseArgs({
-	options: {
-		//BVM management
-		help: { short: 'h', type: 'boolean' },
-		version: { type: 'boolean' },
-		update: { type: 'boolean' },
-		install: { type: 'boolean' },
-
-		//Command options
-		verbose: { short: 'v', type: 'boolean' },
-		force: { short: 'f', type: 'boolean' },
-		'dry-run': { short: 'd', type: 'boolean' },
-		'no-copy': { type: 'boolean' },
-		mode: { short: 'm', type: 'string' },
-		global: { short: 'g', type: 'boolean' },
-		all: { short: 'a', type: 'boolean' },
-	},
-	allowPositionals: true,
-});
-
-const args = _args.positionals;
-const options = {
-	//BVM management
-	help: false,
-	version: false,
-	update: false,
-	install: false,
-	
-	//Command options
-	verbose: false,
-	force: false,
-	'dry-run': false,
-	'no-copy': false,
-	mode: 'deploy',
-	global: false,
-	all: false,
-	..._args.values,
-};
-
 //load git
 import * as git from 'isomorphic-git';
 import * as http from 'isomorphic-git/http/node/index.js';
@@ -72,267 +33,203 @@ const git_options = {
 	fs,
 	http,
 	dir: config.git_dir,
-	dryRun: options['dry-run'],
 	url: `https://github.com/${remote_repo}.git`,
-	onMessage: msg => updateLastLine(msg, true),
+	onMessage: msg => updateLastLine(msg),
 	author: {
 		name: 'bsvm',
 		email: '',
 	},
 };
 
-//globals
-let tags = [], versions = [];
-
-//utilities
-const verboseLog = (...data) => {
-	if (options.verbose) {
-		console.log(...data);
-	}
-};
-
-const updateLastLine = (msg, verbose) => {
-	if (!verbose || options.verbose) {
-		process.stdout.clearLine(0);
-		process.stdout.cursorTo(0);
-		process.stdout.write(msg);
-	}
-};
-
-const updateRepo = async (ref = 'main') => {
-	verboseLog('Updating local repository...');
-	await git.pull({ ...git_options, ref });
-	tags = await git.listTags(git_options);
-};
-
-const updateVersions = async () => {
-	versions = await getVersions();
-}
-
-const getVersions = async (useLocal) => {
-
-	if(useLocal){
-		return await Promise.all(tags.map(convertTagToVersion));
-	}else{
-		try{
-		verboseLog('Fetching releases...');
-		const res = await fetch(`https://api.github.com/repos/${remote_repo}/releases`);
-		return await res.json();
-		}catch(err){
-			console.log('Failed to fetch releases. Attempting to use local repository.');
-			try{
-				return await Promise.all(tags.map(convertTagToVersion));
-			}catch(err){
-				console.log('Failed to get local tags.');
-			}
-		}
-	}
-};
-
-const convertTagToVersion = async tag_name => {
-	const oid = await git.resolveRef({ ...git_options, ref: tag_name });
-	const object = await git.readObject({ ...git_options, oid, format: 'parsed' });
-
-	return {
-		tag_name,
-		name: object.type == 'tag' ? object.object.message : 'Unknown',
-	};
-};
-
-const resolveVersions = (_versions) => _versions.flatMap(_version => versions.filter(version => version.tag_name.includes(_version) || version.name.includes(_version)));
-
-const installDir = (from, to) => {
-	fs.cpSync(from, to, { recursive: true, force: true });
-	verboseLog('Cleaning up...');
-	for(let name in [ '.git', 'node_modules', 'package.json', 'package-lock.json']){
-		fs.rmSync(path.join(to, name), { recursive: true, force: true });
-	}
-}
-
-if (options.version) {
-	console.log(`BSVM v${bsvm.version}`);
-	process.exit();
-}
-
-if (options.help || args[0] == 'help') {
-	console.log(`BSVM usage:
-	bsvm (--help | -h): Print this help message
-	bsvm --version: Print the current version of BSVM
-	bsvm --install: Install BSVM
-	bsvm --update: Update BSVM (Not implemented yet)
-
-	bsvm list: List installed versions of Blankstorm
-		--all | -a: List all Blankstorm versions and whether they are downloaded or installed
-
-	bsvm install [<version> ...]: Installs the specified version[s]
-		--mode <value>: Command to use for installing (defaults to "deploy")
-		--no-copy: Will not copy files if a <mode> command does not exist
-
-	bsvm uninstall [<version> ...]: Uninstalls the specified version[s]
-	bsvm update: Updates the local repository (downloads all Blankstorm versions)
-	bsvm config <key> <value>: Sets the config <key> to <value>
-		--global | -g: Applys the config change globally (not supported yet)
-
-
-	bsvm <any command or flag command>:
-		--verbose | -v: Output verbose/debug info
-		--dry-run | -d: Run the command without changing files (not supported on most commands)
-		--force | -f: Force command actions
-	`);
-	process.exit();
-}
-
-if (options.install) {
+export async function install(options) {
 	console.log(`Installing BSVM (v${bsvm.version}) into ${local_install_path}...`);
 	if (fs.existsSync(local_install_path) && !options.force) {
 		console.log('BSVM installation already exists, use with --force or -f to force installation.');
 		process.exit();
 	}
 
-	verboseLog('Creating directories...');
+	if (options.verbose) console.log('Creating directories...');
 	fs.mkdirSync(config.git_dir, { recursive: true });
 	fs.mkdirSync(config.install_dir, { recursive: true });
-	verboseLog('Writing empty config file...');
+	if (options.verbose) console.log('Writing empty config file...');
 	fs.writeFileSync(local_config_path, '{}');
-	verboseLog('Cloning git repository...');
+	if (options.verbose) console.log('Cloning git repository...');
 	await git.clone(git_options);
 	console.log('Installation successful!');
 	process.exit();
 }
 
-if (options.update) {
-	console.log('CLI Update support not added. Please check https://github.com/dr-vortex/bsvm/releases');
+export function update() {
+	console.log('Auto-update support not added. Please check https://github.com/dr-vortex/bsvm/releases.');
 }
 
-switch (args[0]) {
-	case 'install':
-		await updateRepo();
-		await updateVersions();
-		const versionsToInstall = options.all ? versions : resolveVersions(args.slice(1));
-		for (let version of versionsToInstall) {
-			try {
-				const installPath = path.join(config.install_dir, version.tag_name);
-				if (!version) {
-					throw 'Version does not exist.';
-				}
+export async function updateCache(options) {
+	if (options.verbose) console.log('Updating cache...');
+	if (options.verbose) console.log('Fetching releases...');
+	const res = await fetch(`https://api.github.com/repos/${remote_repo}/releases`);
+	fs.writeFileSync(path.join(local_install_path, 'releases_cache.json'), await res.text());
+	if (options.verbose) console.log('Pulling latest Blankstorm...');
+	await git.pull({ ...git_options, ref: 'main' });
+	if (options.verbose) console.log('Done upating cache.');
+}
 
-				verboseLog(`Checking out ${version.tag_name}...`);
-				await git.checkout({ ...git_options, ref: version.tag_name });
+export async function getVersions(options) {
+	const versions = [];
 
-				if (!fs.existsSync(path.join(config.git_dir, 'package.json'))) {
-					//old version that does not use NPM
+	try {
+		const content = fs.readFileSync(path.join(local_install_path, 'releases_cache.json'), { encoding: 'utf-8' });
+		const releases = JSON.parse(content);
+		for (let release of releases) {
+			const version = releaseToVersion(release);
+			versions.push(version);
+		}
+	} catch (err) {
+		console.log('Could not load releases: release cache does not exist or is not valid JSON' + (options.verbose ? `: ${err}.` : '.'));
+	}
 
-					if(options['no-copy']){
-						throw `Version has no "${options.mode}" command and --no-copy prevents copying.`;
-					}
+	try {
+		const tagNames = git.listTags(git_options);
+		for (let tagName of tagNames) {
+			const oid = await git.resolveRef({ ...git_options, ref: tagName });
+			const object = await git.readObject({ ...git_options, oid, format: 'parsed' });
 
-					installDir(config.git_dir, installPath);
+			if (object.type == 'tag') {
+				const version = tagToVersion(object.object);
+				const i = versions.findIndex(({ tag }) => tag == version.tag);
+				if (i == -1) {
+					versions.push(version);
 				} else {
-					verboseLog('Checking for NPM...');
-					const { stderr: checkError } = await exec(`${process.platform == 'win32' ? 'where' : 'which'} npm`);
-					if (checkError) {
-						throw 'Could not find NPM!' + (options.verbose ? `(${checkError})` : '');
-					}
-
-					console.log('Installing dependencies...');
-					const { stderr: installError } = await exec('npm install', { cwd: config.git_dir });
-					if (installError) {
-						throw `Failed to install dependencies: ${installError}`;
-					}
-
-					verboseLog(`Checking for "${options.mode}" command...`);
-					const content = fs.readFileSync(path.join(config.git_dir, 'package.json'), { encoding: 'utf-8' });
-					let packageData;
-					try {
-						packageData = JSON.parse(content);
-					} catch (err) {
-						throw 'Invalid package.json (not JSON)';
-					}
-
-					if (!packageData.scripts[options.mode]) {
-						console.log(`Could not find "${options.mode}" command ${options['no-copy'] ? ' (not attempting to copy)': ', copying instead...' }`);
-						if(options['no-copy']){
-							throw `Version has no "${options.mode}" command and --no-copy prevents copying.`;
-						}
-						installDir(config.git_dir, installPath);
-					} else {
-						console.log('Deploying...');
-						const { stdout: deployOut, stderr: deployError } = await exec(
-							`${packageData.scripts[options.mode]} ${options.verbose ? '--verbose' : ''} --outDir="${installPath}"`,
-							{ cwd: config.git_dir }
-						);
-						if (deployError) {
-							throw `Couldn't deploy: ${deployError}`;
-						} else {
-							verboseLog(`deploy: ${deployOut}`);
-						}
-					}
+					Object.assign(versions[i], version);
 				}
-			} catch (err) {
-				console.log(`Failed to install version "${version}": ${err}`);
+			} else if (options.verbose) {
+				console.log(`Warning: ${tagName}: not an annotated tag, can not parse as version.`);
 			}
 		}
-		console.log('Done!');
-		break;
-	case 'uninstall':
-		await updateRepo();
-		await updateVersions();
-		const versionsToUninstall = options.all ? versions : resolveVersions(args.slice(1));
-		for (let version of versionsToUninstall) {
-			try {
-				const versionPath = path.join(config.install_dir, version.tag_name);
-				if (!fs.existsSync(versionPath)) {
-					throw 'Version is not installed.';
-				}
+	} catch (err) {
+		console.log('Could not load tags' + (options.verbose ? `: ${err}.` : '.'));
+	}
 
-				console.log(`Uninstalling ${version.tag_name}...`);
-				fs.rmSync(versionPath, { recursive: true, force: true });
-			} catch (err) {
-				console.log(`Failed to uninstall version "${version}": ${err}`);
-			}
-		}
-		console.log('Done!');
-		break;
-	case 'update':
-		console.log('Updating...');
-		await updateRepo();
-		await updateVersions();
-		console.log('Done!');
-		break;
-	case 'list':
-		//fetch releases from GitHub
-		let _versions = [];
+	versions.sort((a, b) => a.time < b.time);
+
+	return versions;
+}
+
+export async function resolveVersions(versionsToResolve, versions, options) {
+	return versionsToResolve.flatMap(_version => versions.filter(version => version.tag.includes(_version) || version.name.includes(_version)));
+}
+
+export async function installVersions(versions, options) {
+	for (let version of versions) {
 		try {
-			_versions = await getVersions();
-		} catch (err) {
-			console.log('Failed to fetch releases. Attempting to use local repository.');
-		}
-		_versions.reverse();
-		for (let version of _versions) {
-			const isInstalled = fs.existsSync(path.join(config.install_dir, version.tag_name));
-
-			if (options.all) {
-				console.log(`${version.name} <${version.tag_name}> ${isInstalled ? '(installed)' : tags.includes(version.tag_name) ? '(downloaded)' : ''}`);
-			} else if (isInstalled) {
-				console.log(`${version.name} <${version.tag_name}>`);
+			const installPath = path.join(config.install_dir, version.tag_name);
+			if (!version) {
+				throw 'Version does not exist.';
 			}
+
+			if (options.verbose) console.log(`Checking out ${version.tag_name}...`);
+			await git.checkout({ ...git_options, ref: version.tag_name });
+
+			if (!fs.existsSync(path.join(config.git_dir, 'package.json'))) {
+				//old version that does not use NPM
+
+				if (options['no-copy']) {
+					throw `Version has no "${options.mode}" command and no-copy option prevents copying.`;
+				}
+
+				copyGitDir(config.git_dir, installPath);
+			} else {
+				if (options.verbose) console.log('Checking for NPM...');
+				const { stderr: checkError } = await exec(`${process.platform == 'win32' ? 'where' : 'which'} npm`);
+				if (checkError) {
+					throw 'Could not find NPM!' + (options.verbose ? `(${checkError})` : '');
+				}
+
+				console.log('Installing dependencies...');
+				const { stderr: installError } = await exec('npm install', { cwd: config.git_dir });
+				if (installError) {
+					throw `Failed to install dependencies: ${installError}`;
+				}
+
+				if (options.verbose) console.log(`Checking for "${options.mode}" command...`);
+				const content = fs.readFileSync(path.join(config.git_dir, 'package.json'), { encoding: 'utf-8' });
+				let packageData;
+				try {
+					packageData = JSON.parse(content);
+				} catch (err) {
+					throw 'Invalid package.json (not JSON)';
+				}
+
+				if (!packageData.scripts[options.mode]) {
+					console.log(`Could not find "${options.mode}" command ${options['no-copy'] ? ' (not attempting to copy)' : ', copying instead...'}`);
+					if (options['no-copy']) {
+						throw `Version has no "${options.mode}" command and no-copy option prevents copying.`;
+					}
+					copyGitDir(config.git_dir, installPath);
+				} else {
+					console.log('Deploying...');
+					const { stdout: deployOut, stderr: deployError } = await exec(
+						`${packageData.scripts[options.mode]} ${options.verbose ? '--verbose' : ''} --outDir="${installPath}"`,
+						{ cwd: config.git_dir }
+					);
+					if (deployError) {
+						throw `Couldn't deploy: ${deployError}`;
+					} else {
+						if (options.verbose) console.log(`deploy: ${deployOut}`);
+					}
+				}
+			}
+		} catch (err) {
+			console.log(`Failed to install version "${version}"${options.verbose ? `: ${err}` : '.'}`);
 		}
-		break;
-	case 'config':
-		const configPath = options.global ? global_config_path : local_config_path;
-		if (options.global) {
-			console.log('Warning: global config is not supported yet.');
+	}
+}
+
+export async function uninstallVersions(versions, options) {
+	for (let version of versions) {
+		try {
+			const versionPath = path.join(config.install_dir, version);
+			if (!fs.existsSync(versionPath)) {
+				throw 'Version is not installed.';
+			}
+
+			console.log(`Uninstalling ${version}...`);
+			fs.rmSync(versionPath, { recursive: true, force: true });
+		} catch (err) {
+			console.log(`Failed to uninstall version "${version}"${options.verbose ? `: ${err}` : '.'}`);
 		}
-		let _config = {};
-		if (!fs.existsSync(configPath)) {
-			verboseLog(`No config file found at ${configPath}, creating.`);
-		} else {
-			const content = fs.readFileSync(configPath, { encoding: 'utf-8' });
-			Object.assign(_config, JSON.parse(content));
+	}
+	console.log('Done!');
+}
+
+export async function listVerions(options) {
+	for (let version of await getVersions()) {
+		const isInstalled = fs.existsSync(path.join(config.install_dir, version.tag));
+		const tags = await git.listTags(git_options);
+
+		if (options.all) {
+			console.log(`${version.name} <${version.tag}> ${isInstalled ? '(installed)' : tags.includes(version.tag) ? '(downloaded)' : ''}`);
+		} else if (isInstalled) {
+			console.log(`${version.name} <${version.tag}>`);
 		}
-		_config[args[1]] = args[2];
-		fs.writeFileSync(configPath, JSON.stringify(_config));
-		break;
-	default:
-		console.log(`Unsupported command: "${args[0]}"`);
+	}
+}
+
+export function getConfig(key, options) {
+	
+}
+
+export function setConfig(key, value, options) {
+	const configPath = options.global ? global_config_path : local_config_path;
+	if (options.global) {
+		console.log('Warning: global config is not supported yet.');
+	}
+	let _config = {};
+	if (!fs.existsSync(configPath)) {
+		if (options.verbose) console.log(`No config file found at ${configPath}, creating.`);
+	} else {
+		const content = fs.readFileSync(configPath, { encoding: 'utf-8' });
+		Object.assign(_config, JSON.parse(content));
+	}
+	_config[key] = value;
+	fs.writeFileSync(configPath, JSON.stringify(_config));
 }
