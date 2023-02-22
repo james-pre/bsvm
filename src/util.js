@@ -6,6 +6,7 @@ export function tagToVersion(tag){
 		tag: tag.tag,
 		name: tag.message,
 		time: new Date(tag.tagger.timestamp),
+		isLocal: true,
 	}
 }
 
@@ -14,6 +15,7 @@ export function releaseToVersion(release){
 		tag: release.tag_name,
 		name: release.name,
 		time: new Date(release.created_at),
+		isLocal: false,
 	}
 }
 

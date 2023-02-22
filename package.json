@@ -8,8 +8,8 @@
 		"format:check": "prettier --check src/**/*.js",
 		"format:fix": "prettier --fix src/**/*.js",
 		"lint": "eslint src/**/*.js",
-		"build": "pkg -t win,linux --output=dist/bsvm src/index.js",
-		"test": "node src/index.js"
+		"build": "pkg -t win,linux --output=dist/bsvm src/bin.js",
+		"test": "node src/bin.js"
 	},
 	"repository": {
 		"type": "git",

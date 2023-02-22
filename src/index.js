@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import { homedir } from 'os';
 import path from 'path';
 import { promisify } from 'util';
-import { tagToVersion, releaseToVersion, copyGitDir, updateLastLine } from './util.js';
+import { tagToVersion, releaseToVersion, copyGitDir } from './util.js';
 import { exec as _exec } from 'child_process';
 const exec = promisify(_exec);
 const bsvm = { version: '0.0.1' }; //import bsvm from '../package.json' assert { type: 'json' };
@@ -13,7 +13,7 @@ const remote_repo = 'dr-vortex/blankstorm',
 	global_config_path = local_config_path;
 
 //load config
-let config = {
+export let config = {
 	install_dir: path.join(local_install_path, 'versions'),
 	git_dir: path.join(local_install_path, 'repo'),
 };
@@ -34,7 +34,6 @@ const git_options = {
 	http,
 	dir: config.git_dir,
 	url: `https://github.com/${remote_repo}.git`,
-	onMessage: msg => updateLastLine(msg),
 	author: {
 		name: 'bsvm',
 		email: '',
@@ -63,13 +62,13 @@ export function update() {
 	console.log('Auto-update support not added. Please check https://github.com/dr-vortex/bsvm/releases.');
 }
 
-export async function updateCache(options) {
+export async function updateCache(options, onMessage = console.log) {
 	if (options.verbose) console.log('Updating cache...');
 	if (options.verbose) console.log('Fetching releases...');
 	const res = await fetch(`https://api.github.com/repos/${remote_repo}/releases`);
 	fs.writeFileSync(path.join(local_install_path, 'releases_cache.json'), await res.text());
 	if (options.verbose) console.log('Pulling latest Blankstorm...');
-	await git.pull({ ...git_options, ref: 'main' });
+	await git.pull({ ...git_options, ref: 'main', onMessage, });
 	if (options.verbose) console.log('Done upating cache.');
 }
 
@@ -84,11 +83,11 @@ export async function getVersions(options) {
 			versions.push(version);
 		}
 	} catch (err) {
-		console.log('Could not load releases: release cache does not exist or is not valid JSON' + (options.verbose ? `: ${err}.` : '.'));
+		console.log('Could not load releases: release cache does not exist or is not valid JSON' + (options?.verbose ? `: ${err}.` : '.'));
 	}
 
 	try {
-		const tagNames = git.listTags(git_options);
+		const tagNames = await git.listTags(git_options);
 		for (let tagName of tagNames) {
 			const oid = await git.resolveRef({ ...git_options, ref: tagName });
 			const object = await git.readObject({ ...git_options, oid, format: 'parsed' });
@@ -101,12 +100,13 @@ export async function getVersions(options) {
 				} else {
 					Object.assign(versions[i], version);
 				}
-			} else if (options.verbose) {
+			} else if (options?.verbose) {
+				versions.find(({ tag }) => tag == tagName).isLocal = true;
 				console.log(`Warning: ${tagName}: not an annotated tag, can not parse as version.`);
 			}
 		}
 	} catch (err) {
-		console.log('Could not load tags' + (options.verbose ? `: ${err}.` : '.'));
+		console.log('Could not load tags' + (options?.verbose ? `: ${err}.` : '.'));
 	}
 
 	versions.sort((a, b) => a.time < b.time);
@@ -114,7 +114,7 @@ export async function getVersions(options) {
 	return versions;
 }
 
-export async function resolveVersions(versionsToResolve, versions, options) {
+export function resolveVersions(versionsToResolve, versions) {
 	return versionsToResolve.flatMap(_version => versions.filter(version => version.tag.includes(_version) || version.name.includes(_version)));
 }
 
@@ -201,25 +201,32 @@ export async function uninstallVersions(versions, options) {
 	console.log('Done!');
 }
 
-export async function listVerions(options) {
-	for (let version of await getVersions()) {
-		const isInstalled = fs.existsSync(path.join(config.install_dir, version.tag));
-		const tags = await git.listTags(git_options);
-
-		if (options.all) {
-			console.log(`${version.name} <${version.tag}> ${isInstalled ? '(installed)' : tags.includes(version.tag) ? '(downloaded)' : ''}`);
-		} else if (isInstalled) {
-			console.log(`${version.name} <${version.tag}>`);
-		}
-	}
+export function getConfigPath(options){
+	return options?.global ? global_config_path : local_config_path;
 }
 
 export function getConfig(key, options) {
-	
+	const configPath = getConfigPath(options);
+	if (options.global) {
+		console.log('Warning: global config is not supported yet.');
+	}
+	let _config = {};
+	if (!fs.existsSync(configPath)) {
+		if (options.verbose) console.log(`No config file found at ${configPath}, creating.`);
+	} else {
+		const content = fs.readFileSync(configPath, { encoding: 'utf-8' });
+		Object.assign(_config, JSON.parse(content));
+	}
+	if(!Object.prototype.hasOwnProperty.call(_config, key)){
+		console.log(`Config property "${key}" is not set in ${configPath}`);
+	}else{
+		console.log(`${key}: ${_config[key]} (in ${configPath})`);
+		return _config[key];
+	}
 }
 
 export function setConfig(key, value, options) {
-	const configPath = options.global ? global_config_path : local_config_path;
+	const configPath = getConfigPath(options);
 	if (options.global) {
 		console.log('Warning: global config is not supported yet.');
 	}
@@ -231,5 +238,6 @@ export function setConfig(key, value, options) {
 		Object.assign(_config, JSON.parse(content));
 	}
 	_config[key] = value;
+	config[key] = value;
 	fs.writeFileSync(configPath, JSON.stringify(_config));
 }
