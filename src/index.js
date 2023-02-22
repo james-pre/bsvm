@@ -121,13 +121,13 @@ export function resolveVersions(versionsToResolve, versions) {
 export async function installVersions(versions, options) {
 	for (let version of versions) {
 		try {
-			const installPath = path.join(config.install_dir, version.tag_name);
+			const installPath = path.join(config.install_dir, version.tag);
 			if (!version) {
 				throw 'Version does not exist.';
 			}
 
-			if (options.verbose) console.log(`Checking out ${version.tag_name}...`);
-			await git.checkout({ ...git_options, ref: version.tag_name });
+			if (options.verbose) console.log(`Checking out ${version.tag}...`);
+			await git.checkout({ ...git_options, ref: version.tag });
 
 			if (!fs.existsSync(path.join(config.git_dir, 'package.json'))) {
 				//old version that does not use NPM
@@ -160,7 +160,7 @@ export async function installVersions(versions, options) {
 				}
 
 				if (!packageData.scripts[options.mode]) {
-					console.log(`Could not find "${options.mode}" command ${options['no-copy'] ? ' (not attempting to copy)' : ', copying instead...'}`);
+					console.log(`Could not find "${options.mode}" command${options['no-copy'] ? '. (not attempting to copy)' : ', copying instead...'}`);
 					if (options['no-copy']) {
 						throw `Version has no "${options.mode}" command and no-copy option prevents copying.`;
 					}
@@ -179,7 +179,7 @@ export async function installVersions(versions, options) {
 				}
 			}
 		} catch (err) {
-			console.log(`Failed to install version "${version}"${options.verbose ? `: ${err}` : '.'}`);
+			console.log(`Failed to install version "${version.tag}"${options.verbose ? `: ${err}` : '.'}`);
 		}
 	}
 }

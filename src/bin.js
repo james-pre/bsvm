@@ -128,9 +128,9 @@ switch (args[0]) {
 			const isInstalled = fs.existsSync(path.join(config.install_dir, version.tag));
 
 			if (options.all) {
-				console.log(`${version.name} <${version.tag}> ${isInstalled ? '(installed)' : version.isLocal ? '(downloaded)' : ''}`);
+				console.log(`${version.name.replaceAll('\n','\x00')} <${version.tag}> ${isInstalled ? '(installed)' : version.isLocal ? '(downloaded)' : ''}`);
 			} else if (isInstalled) {
-				console.log(`${version.name} <${version.tag}>`);
+				console.log(`${version.name.replaceAll('\n','\x00')} <${version.tag}>`);
 			}
 		}
 		break;
