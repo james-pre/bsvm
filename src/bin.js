@@ -97,14 +97,13 @@ if (options.update) {
 if (!options['cache-no-update']) {
 	try {
 		const configPath = getConfigPath(options);
-		if (!fs.existsSync(configPath) || (Date.now() - fs.statSync(configPath).ctime.getTime() < 1000 * 3600) || options['reload-cache']) {
+		if (!fs.existsSync(configPath) || Date.now() - fs.statSync(configPath).ctime.getTime() < 1000 * 3600 || options['reload-cache']) {
 			await updateCache(options, msg => {
 				if (options.verbose) {
 					updateLastLine(msg);
 				}
 			});
 		}
-		
 	} catch (err) {
 		console.log(`Failed to update cache ${options.verbose ? `: ${err}` : '.'}`);
 	}
@@ -130,9 +129,9 @@ switch (args[0]) {
 			const isInstalled = fs.existsSync(path.join(config.install_dir, version.tag));
 
 			if (options.all) {
-				console.log(`${version.name.replaceAll('\n','\x00')} <${version.tag}> ${isInstalled ? '(installed)' : version.isLocal ? '(downloaded)' : ''}`);
+				console.log(`${version.name.replaceAll('\n', '\x00')} <${version.tag}> ${isInstalled ? '(installed)' : version.isLocal ? '(downloaded)' : ''}`);
 			} else if (isInstalled) {
-				console.log(`${version.name.replaceAll('\n','\x00')} <${version.tag}>`);
+				console.log(`${version.name.replaceAll('\n', '\x00')} <${version.tag}>`);
 			}
 		}
 		break;
@@ -144,7 +143,7 @@ switch (args[0]) {
 		}
 		break;
 	default:
-		if(!options['reload-cache']){
+		if (!options['reload-cache']) {
 			console.log(`Unsupported command: "${args[0]}"`);
 		}
 }

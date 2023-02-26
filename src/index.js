@@ -67,7 +67,7 @@ export async function updateCache(options, onMessage = console.log) {
 	const res = await fetch(`https://api.github.com/repos/${remote_repo}/releases`);
 	fs.writeFileSync(path.join(local_install_path, 'releases_cache.json'), await res.text());
 	if (options.verbose) console.log('Pulling latest Blankstorm...');
-	await git.pull({ ...git_options, ref: 'main', onMessage, });
+	await git.pull({ ...git_options, ref: 'main', onMessage });
 	if (options.verbose) console.log('Done upating cache.');
 }
 
@@ -200,7 +200,7 @@ export async function uninstallVersions(versions, options) {
 	console.log('Done!');
 }
 
-export function getConfigPath(options){
+export function getConfigPath(options) {
 	return options?.global ? global_config_path : local_config_path;
 }
 
@@ -216,9 +216,9 @@ export function getConfig(key, options) {
 		const content = fs.readFileSync(configPath, { encoding: 'utf-8' });
 		Object.assign(_config, JSON.parse(content));
 	}
-	if(!Object.prototype.hasOwnProperty.call(_config, key)){
+	if (!Object.prototype.hasOwnProperty.call(_config, key)) {
 		console.log(`Config property "${key}" is not set in ${configPath}`);
-	}else{
+	} else {
 		console.log(`${key}: ${_config[key]} (in ${configPath})`);
 		return _config[key];
 	}
