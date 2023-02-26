@@ -44,7 +44,7 @@ export async function install(options) {
 	console.log(`Installing BSVM (v${bsvm.version}) into ${local_install_path}...`);
 	if (fs.existsSync(local_install_path) && !options.force) {
 		console.log('BSVM installation already exists, use with --force or -f to force installation.');
-		process.exit();
+		return;
 	}
 
 	if (options.verbose) console.log('Creating directories...');
@@ -55,10 +55,9 @@ export async function install(options) {
 	if (options.verbose) console.log('Cloning git repository...');
 	await git.clone(git_options);
 	console.log('Installation successful!');
-	process.exit();
 }
 
-export function update() {
+export async function update() {
 	console.log('Auto-update support not added. Please check https://github.com/dr-vortex/bsvm/releases.');
 }
 

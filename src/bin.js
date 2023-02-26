@@ -85,11 +85,13 @@ if (options.help || args[0] == 'help') {
 }
 
 if (options.install) {
-	install();
+	await install();
+	process.exit();
 }
 
 if (options.update) {
-	update();
+	await update();
+	process.exit();
 }
 
 if (!options['cache-no-update']) {
@@ -142,5 +144,7 @@ switch (args[0]) {
 		}
 		break;
 	default:
-		console.log(`Unsupported command: "${args[0]}"`);
+		if(!options['reload-cache']){
+			console.log(`Unsupported command: "${args[0]}"`);
+		}
 }
