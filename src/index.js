@@ -67,6 +67,7 @@ export async function updateCache(options, onMessage = console.log) {
 	const res = await fetch(`https://api.github.com/repos/${remote_repo}/releases`);
 	fs.writeFileSync(path.join(local_install_path, 'releases_cache.json'), await res.text());
 	if (options.verbose) console.log('Pulling latest Blankstorm...');
+	await git.fetch({ ...git_options, tags: true });
 	await git.pull({ ...git_options, ref: 'main', onMessage });
 	if (options.verbose) console.log('Done upating cache.');
 }
