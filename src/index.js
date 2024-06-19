@@ -7,7 +7,7 @@ import { exec as _exec } from 'child_process';
 const exec = promisify(_exec);
 const bsvm = { version: '0.0.1' }; //import bsvm from '../package.json' assert { type: 'json' };
 
-const remote_repo = 'dr-vortex/blankstorm',
+const remote_repo = 'james-pre/blankstorm',
 	local_install_path = path.join(homedir(), '.bsvm/'),
 	local_config_path = path.join(local_install_path, 'config.json'),
 	global_config_path = local_config_path;
@@ -58,7 +58,7 @@ export async function install(options) {
 }
 
 export async function update() {
-	console.log('Auto-update support not added. Please check https://github.com/dr-vortex/bsvm/releases.');
+	console.log('Auto-update support not added. Please check https://github.com/james-pre/bsvm/releases.');
 }
 
 export async function updateCache(options, onMessage = console.log) {

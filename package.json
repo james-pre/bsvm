@@ -13,7 +13,7 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/dr-vortex/bsvm.git"
+		"url": "git+https://github.com/james-pre/bsvm.git"
 	},
 	"engines": {
 		"node": ">=18.0.0"
@@ -21,9 +21,9 @@
 	"author": "Dr. Vortex",
 	"license": "see license.md",
 	"bugs": {
-		"url": "https://github.com/dr-vortex/bsvm/issues"
+		"url": "https://github.com/james-pre/bsvm/issues"
 	},
-	"homepage": "https://github.com/dr-vortex/bsvm#readme",
+	"homepage": "https://github.com/james-pre/bsvm#readme",
 	"devDependencies": {
 		"eslint": "^8.33.0",
 		"eslint-plugin-node": "^11.1.0",
